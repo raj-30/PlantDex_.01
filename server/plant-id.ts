@@ -1,6 +1,7 @@
 type PlantIdResponse = {
   suggestions: Array<{
     plant_name: string;
+    probability: number;
     plant_details: {
       scientific_name: string;
       wiki_description: {
@@ -18,7 +19,6 @@ type IdentificationResult = {
   scientificName: string;
   habitat: string;
   careTips: string;
-  confidence: number;
 };
 
 export async function identifyPlant(base64Image: string): Promise<IdentificationResult> {
@@ -52,7 +52,6 @@ export async function identifyPlant(base64Image: string): Promise<Identification
       scientificName: suggestion.plant_details.scientific_name,
       habitat: `Native to regions where ${suggestion.plant_details.taxonomy.class} plants typically grow`,
       careTips: generateCareTips(suggestion.plant_details.wiki_description.value),
-      confidence: suggestion.confidence || 0,
     };
   } catch (error) {
     console.error('Plant identification error:', error);

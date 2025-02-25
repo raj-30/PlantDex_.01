@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPlantSchema, InsertPlant } from "@shared/schema";
@@ -21,6 +22,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [identifiedPlant, setIdentifiedPlant] = useState<InsertPlant | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
@@ -35,6 +37,16 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       imageUrl: "",
     },
   });
+
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!open) {
+      form.reset();
+      setPreviewUrl(undefined);
+      setIdentifiedPlant(null);
+      stopCamera();
+    }
+  }, [open, form]);
 
   const scanMutation = useMutation({
     mutationFn: async (data: InsertPlant) => {
@@ -51,6 +63,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       onOpenChange(false);
       form.reset();
       setPreviewUrl(undefined);
+      setIdentifiedPlant(null);
       stopCamera();
       toast({
         title: "Success",
@@ -87,7 +100,9 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
+        const dataUrl = reader.result as string;
+        setPreviewUrl(dataUrl);
+        identifyPlantFromImage(dataUrl);
         stopCamera();
       };
       reader.readAsDataURL(file);
@@ -140,21 +155,39 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
-
-        // Convert to JPEG with good quality
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
         setPreviewUrl(dataUrl);
+        identifyPlantFromImage(dataUrl);
         stopCamera();
       }
     }
   };
 
-  // Cleanup camera on unmount
-  useEffect(() => {
-    return () => {
-      stopCamera();
-    };
-  }, []);
+  const identifyPlantFromImage = async (imageUrl: string) => {
+    setIsProcessing(true);
+    try {
+      const response = await apiRequest("POST", "/api/plants", { imageUrl });
+      const plantData = await response.json();
+
+      // Update form with identified plant data
+      form.reset({
+        name: plantData.name,
+        scientificName: plantData.scientificName,
+        habitat: plantData.habitat,
+        careTips: plantData.careTips,
+        imageUrl: imageUrl,
+      });
+      setIdentifiedPlant(plantData);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to identify plant. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => {
@@ -240,12 +273,70 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
             </Tabs>
 
             {previewUrl && !isProcessing && (
-              <Button type="submit" className="w-full" disabled={scanMutation.isPending}>
-                {scanMutation.isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Identify Plant
-              </Button>
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Plant Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="scientificName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Scientific Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="habitat"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Habitat</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="careTips"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Care Tips</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Button type="submit" className="w-full" disabled={scanMutation.isPending}>
+                  {scanMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Add to Collection
+                </Button>
+              </div>
             )}
 
             {isProcessing && (
