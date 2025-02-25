@@ -1,0 +1,132 @@
+PlantDex App - Detailed App Flow & Features
+
+Overview
+
+PlantDex is a React Native app that allows users to scan, identify, and collect plant information through beautifully designed digital plant cards. The app leverages React Native with TypeScript, Expo, Expo Router, Supabase, and React Native Paper.
+
+App Flow
+
+1. Welcome Screen
+
+Clean and minimal UI.
+
+App logo and tagline.
+
+Two primary buttons:
+
+Sign Up (Navigates to authentication flow)
+
+Log In (Navigates to existing user login)
+
+2. User Authentication
+
+Email and password authentication using Supabase Auth.
+
+Once authenticated, users are redirected to the Main Dashboard.
+
+3. Main Dashboard
+
+Displays a list of recently scanned plant cards.
+
+Floating Quick-Add Button to scan a new plant.
+
+Navigation Tabs:
+
+Library: View the full plant collection.
+
+Explore: Discover more plant-related information.
+
+Profile: Manage user settings and preferences.
+
+4. Plant Scanning Process
+
+Accessed via the Quick-Add Camera Button.
+
+Uses Expo Camera to take a plant image.
+
+The image is sent to Plant.id API (or similar) via Supabase Functions.
+
+If successful, a New Plant Card is created with:
+
+Plant Name
+
+Scientific Name
+
+Habitat Information
+
+Care Tips
+
+Additional Information for enthusiasts
+
+If scanning fails, the user is prompted to retry.
+
+5. Library Section
+
+Displays all scanned plants as cards.
+
+Sort & Filter Options: Sort by date, name, or plant type.
+
+Clicking on a card shows detailed plant information.
+
+6. Plant Details Page
+
+Expanded details of the scanned plant, including:
+
+High-resolution image
+
+Scientific and common name
+
+Growth conditions
+
+Watering, sunlight, and soil recommendations
+
+Fun facts and history
+
+Option to edit/add notes
+
+7. Profile & Settings
+
+User profile details (name, profile picture, email).
+
+Option to manage saved plants.
+
+Sync & Backup: Ensure user data is stored securely via Supabase.
+
+Log Out option.
+
+Technologies Used
+
+Frontend
+
+React Native with TypeScript
+
+Expo for simplified development
+
+Expo Router for navigation
+
+React Native Paper for UI components
+
+Backend & Database
+
+Supabase for authentication and database
+
+Supabase Functions for API requests
+
+Supabase Storage for plant images
+
+Third-Party Services
+
+Plant.id API (or alternative) for plant recognition
+
+Firebase or Supabase for analytics
+
+Future Enhancements
+
+Offline Scanning using an on-device ML model.
+
+Social Sharing to allow users to share plant collections.
+
+Gamification (badges for collection milestones).
+
+
+
