@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { insertPlantSchema } from "@shared/schema";
+import { identifyPlant } from "./plant-id";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
@@ -26,23 +27,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new plant
   app.post("/api/plants", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     const result = insertPlantSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json(result.error);
     }
 
-    // Mock plant identification
-    const mockIdentification = {
-      name: result.data.name || "Unknown Plant",
-      scientificName: result.data.scientificName || "Plantus Unknownus",
-      habitat: result.data.habitat || "Various habitats",
-      careTips: result.data.careTips || "Water regularly, provide adequate sunlight",
-      imageUrl: result.data.imageUrl || "https://placehold.co/400x300",
-    };
+    try {
+      // If image is provided, identify the plant
+      let plantData;
+      if (result.data.imageUrl && result.data.imageUrl.startsWith('data:image')) {
+        plantData = await identifyPlant(result.data.imageUrl);
+      } else {
+        // Use provided data or fallback values
+        plantData = {
+          name: result.data.name || "Unknown Plant",
+          scientificName: result.data.scientificName || "Plantus Unknownus",
+          habitat: result.data.habitat || "Various habitats",
+          careTips: result.data.careTips || "Water regularly, provide adequate sunlight",
+        };
+      }
 
-    const plant = await storage.createPlant(req.user.id, mockIdentification);
-    res.status(201).json(plant);
+      const plant = await storage.createPlant(req.user.id, {
+        ...plantData,
+        imageUrl: result.data.imageUrl || "https://placehold.co/400x300",
+      });
+
+      res.status(201).json(plant);
+    } catch (error) {
+      console.error('Error creating plant:', error);
+      res.status(500).json({ error: 'Failed to identify plant' });
+    }
   });
 
   const httpServer = createServer(app);
