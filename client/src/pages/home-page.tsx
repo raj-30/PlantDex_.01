@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Plant } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { LogOut, Plus, Sprout } from "lucide-react";
+import { LogOut, Camera, Sprout } from "lucide-react";
 import PlantCard from "@/components/plant-card";
 import ScanPlantDialog from "@/components/scan-plant-dialog";
 import { useState } from "react";
@@ -25,35 +25,35 @@ export default function HomePage() {
               PlantDex
             </h1>
           </div>
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setScanOpen(true)}
-              className="bg-white hover:bg-green-50"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => logoutMutation.mutate()}
-              className="bg-white hover:bg-green-50"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => logoutMutation.mutate()}
+            className="bg-white hover:bg-green-50"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </header>
 
       <main className="container mx-auto px-4 pt-24 pb-8">
-        <div className="text-center mb-8">
+        <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-green-900 mb-2">
             Welcome to Your Plant Collection
           </h2>
-          <p className="text-green-700">
+          <p className="text-green-700 mb-8">
             Hey {user?.username}! Discover and document your botanical journey.
           </p>
+
+          {/* New scan button styled like the image */}
+          <Button
+            variant="outline"
+            onClick={() => setScanOpen(true)}
+            className="w-48 h-48 border-2 border-dashed border-green-300 bg-green-50/50 hover:bg-green-50 rounded-xl flex flex-col items-center justify-center gap-4 transition-colors duration-200"
+          >
+            <Camera className="h-12 w-12 text-green-600" />
+            <span className="text-green-700 font-medium">Click to upload or take a photo</span>
+          </Button>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -70,7 +70,7 @@ export default function HomePage() {
                   Start Your Collection
                 </h3>
                 <p className="text-green-700">
-                  Click the + button to scan your first plant!
+                  Click the camera button above to scan your first plant!
                 </p>
               </div>
             </div>
