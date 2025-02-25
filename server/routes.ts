@@ -4,9 +4,18 @@ import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { insertPlantSchema } from "@shared/schema";
 import { identifyPlant } from "./plant-id";
+import session from "express-session";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
+
+  // Update the session configuration to use the SESSION_SECRET from environment variables
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production' }
+  }));
 
   // Get user's plants
   app.get("/api/plants", async (req, res) => {
@@ -40,14 +49,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const result = insertPlantSchema.safeParse(req.body);
     if (!result.success) {
+      console.error("Validation error:", result.error);
       return res.status(400).json(result.error);
     }
 
     try {
       // If image is provided, identify the plant
       let plantData;
-      if (result.data.imageUrl && result.data.imageUrl.startsWith('data:image')) {
-        plantData = await identifyPlant(result.data.imageUrl);
+      if (result.data.imageUrl && (result.data.imageUrl.startsWith('data:image') || result.data.imageUrl.includes('base64'))) {
+        try {
+          plantData = await identifyPlant(result.data.imageUrl);
+          console.log("Plant identification successful:", plantData.name);
+        } catch (identifyError: any) {
+          console.error("Plant identification error:", identifyError);
+          // If identification fails but we have other data, continue with that
+          if (result.data.name && result.data.scientificName) {
+            plantData = {
+              name: result.data.name,
+              scientificName: result.data.scientificName,
+              habitat: result.data.habitat || "Various habitats",
+              careTips: result.data.careTips || "Water regularly, provide adequate sunlight",
+            };
+          } else {
+            return res.status(500).json({ error: 'Failed to identify plant: ' + identifyError.message });
+          }
+        }
       } else {
         // Use provided data or fallback values
         plantData = {
@@ -64,9 +90,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.status(201).json(plant);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating plant:', error);
-      res.status(500).json({ error: 'Failed to identify plant' });
+      res.status(500).json({ error: 'Failed to create plant: ' + error.message });
     }
   });
 

@@ -23,6 +23,11 @@ type IdentificationResult = {
 
 export async function identifyPlant(base64Image: string): Promise<IdentificationResult> {
   try {
+    // Extract the base64 data part from the data URL
+    const base64Data = base64Image.includes('base64,') 
+      ? base64Image.split('base64,')[1] 
+      : base64Image;
+
     const response = await fetch('https://api.plant.id/v2/identify', {
       method: 'POST',
       headers: {
@@ -30,21 +35,27 @@ export async function identifyPlant(base64Image: string): Promise<Identification
         'Api-Key': process.env.PLANT_ID_API_KEY!,
       },
       body: JSON.stringify({
-        images: [base64Image.split(',')[1]], // Remove data:image/jpeg;base64, prefix
+        images: [base64Data],
         plant_details: ["common_names", "taxonomy", "url", "wiki_description"],
+        modifiers: ["crops_fast"],
+        plant_language: "en",
+        disease_details: ["description", "treatment"]
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Plant.id API error: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('Plant.id API error response:', errorText);
+      throw new Error(`Plant.id API error: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json() as PlantIdResponse;
-    const suggestion = data.suggestions[0];
-
-    if (!suggestion) {
+    
+    if (!data.suggestions || data.suggestions.length === 0) {
       throw new Error('No plant matches found');
     }
+    
+    const suggestion = data.suggestions[0];
 
     // Extract relevant information
     return {

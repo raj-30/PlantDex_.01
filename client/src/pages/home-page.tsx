@@ -2,18 +2,28 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Plant } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { LogOut, Plus, Sprout } from "lucide-react";
+import { LogOut, Plus, Sprout, RefreshCw } from "lucide-react";
 import PlantCard from "@/components/plant-card";
 import ScanPlantDialog from "@/components/scan-plant-dialog";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function HomePage() {
   const { user, logoutMutation } = useAuth();
   const [scanOpen, setScanOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const { data: plants = [], isLoading } = useQuery<Plant[]>({
+  const { data: plants = [], isLoading, dataUpdatedAt } = useQuery<Plant[]>({
     queryKey: ["/api/plants"],
   });
+
+  // Visual indicator for refresh
+  useEffect(() => {
+    if (dataUpdatedAt) {
+      setRefreshing(true);
+      const timer = setTimeout(() => setRefreshing(false), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [dataUpdatedAt]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
@@ -26,6 +36,9 @@ export default function HomePage() {
             </h1>
           </div>
           <div className="flex items-center gap-4">
+            {refreshing && (
+              <RefreshCw className="h-4 w-4 text-green-600 animate-spin" />
+            )}
             <Button
               variant="outline"
               size="icon"
