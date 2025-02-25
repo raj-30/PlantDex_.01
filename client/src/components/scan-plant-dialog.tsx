@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPlantSchema, InsertPlant } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Upload, Camera } from "lucide-react";
+import { Loader2, Upload, Camera, RefreshCw } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,7 +22,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [identifiedPlant, setIdentifiedPlant] = useState<InsertPlant | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
@@ -43,7 +43,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     if (!open) {
       form.reset();
       setPreviewUrl(undefined);
-      setIdentifiedPlant(null);
+      setRetryCount(0);
       stopCamera();
     }
   }, [open, form]);
@@ -63,17 +63,17 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       onOpenChange(false);
       form.reset();
       setPreviewUrl(undefined);
-      setIdentifiedPlant(null);
+      setRetryCount(0);
       stopCamera();
       toast({
-        title: "Success",
-        description: "Plant added to your collection!",
+        title: "Success!",
+        description: "Plant successfully added to your collection!",
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to identify plant. Please try again.",
+        description: "Failed to add plant. Please try again.",
         variant: "destructive",
       });
     },
@@ -113,11 +113,20 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
-          facingMode: 'environment',
+          facingMode: { exact: "environment" }, // Prefer back camera
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         } 
+      }).catch(() => {
+        // Fallback to any available camera if environment camera is not available
+        return navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          } 
+        });
       });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCapturing(true);
@@ -126,7 +135,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       console.error("Error accessing camera:", err);
       toast({
         title: "Camera Error",
-        description: "Could not access your camera. Please check permissions.",
+        description: "Could not access your camera. Please check permissions or try uploading an image instead.",
         variant: "destructive",
       });
     }
@@ -155,11 +164,18 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95); // High quality JPEG
         setPreviewUrl(dataUrl);
         identifyPlantFromImage(dataUrl);
         stopCamera();
       }
+    }
+  };
+
+  const retryIdentification = () => {
+    setRetryCount(prev => prev + 1);
+    if (previewUrl) {
+      identifyPlantFromImage(previewUrl);
     }
   };
 
@@ -169,6 +185,10 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       const response = await apiRequest("POST", "/api/plants", { imageUrl });
       const plantData = await response.json();
 
+      if (!plantData.name) {
+        throw new Error("Could not identify plant");
+      }
+
       // Update form with identified plant data
       form.reset({
         name: plantData.name,
@@ -177,11 +197,17 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
         careTips: plantData.careTips,
         imageUrl: imageUrl,
       });
-      setIdentifiedPlant(plantData);
+
+      toast({
+        title: "Plant Identified!",
+        description: `Found: ${plantData.name}`,
+      });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to identify plant. Please try again.",
+        title: "Identification Failed",
+        description: retryCount >= 2 
+          ? "Multiple identification attempts failed. Try a different image or angle."
+          : "Could not identify plant. Try again or use a different image.",
         variant: "destructive",
       });
     } finally {
@@ -210,11 +236,25 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
                 <div className="flex justify-center">
                   <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
                     {previewUrl ? (
-                      <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
+                      <div className="relative">
+                        <img
+                          src={previewUrl}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="absolute bottom-2 right-2"
+                          onClick={() => {
+                            setPreviewUrl(undefined);
+                            startCamera();
+                          }}
+                        >
+                          Retake
+                        </Button>
+                      </div>
                     ) : isCapturing ? (
                       <>
                         <video
@@ -250,11 +290,22 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
                 <div className="flex justify-center">
                   <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
                     {previewUrl ? (
-                      <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
+                      <div className="relative">
+                        <img
+                          src={previewUrl}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="absolute bottom-2 right-2"
+                          onClick={() => setPreviewUrl(undefined)}
+                        >
+                          Change Image
+                        </Button>
+                      </div>
                     ) : (
                       <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer">
                         <Upload className="h-8 w-8 text-gray-400" />
@@ -330,19 +381,36 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
                   )}
                 />
 
-                <Button type="submit" className="w-full" disabled={scanMutation.isPending}>
-                  {scanMutation.isPending && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Add to Collection
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline"
+                    className="flex-1"
+                    onClick={retryIdentification}
+                    disabled={isProcessing || retryCount >= 3}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry Identification
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    className="flex-1"
+                    disabled={scanMutation.isPending}
+                  >
+                    {scanMutation.isPending && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Add to Collection
+                  </Button>
+                </div>
               </div>
             )}
 
             {isProcessing && (
-              <div className="text-center py-4">
+              <div className="text-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin mx-auto text-green-600" />
                 <p className="mt-2 text-sm text-gray-600">Identifying your plant...</p>
+                <p className="text-xs text-gray-500">This may take a few moments</p>
               </div>
             )}
           </form>
