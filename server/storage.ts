@@ -1,77 +1,67 @@
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
 import { User, InsertUser, Plant, InsertPlant } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
+import { users, plants } from "@shared/schema";
+import { pool } from "./db";
 
-const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   // Plant operations
   getPlants(userId: number): Promise<Plant[]>;
   getPlant(id: number): Promise<Plant | undefined>;
   createPlant(userId: number, plant: InsertPlant): Promise<Plant>;
-  
+
   sessionStore: session.Store;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private plants: Map<number, Plant>;
-  private currentUserId: number;
-  private currentPlantId: number;
+export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.users = new Map();
-    this.plants = new Map();
-    this.currentUserId = 1;
-    this.currentPlantId = 1;
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000,
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true,
     });
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   async getPlants(userId: number): Promise<Plant[]> {
-    return Array.from(this.plants.values()).filter(
-      (plant) => plant.userId === userId,
-    );
+    return await db.select().from(plants).where(eq(plants.userId, userId));
   }
 
   async getPlant(id: number): Promise<Plant | undefined> {
-    return this.plants.get(id);
+    const [plant] = await db.select().from(plants).where(eq(plants.id, id));
+    return plant;
   }
 
   async createPlant(userId: number, insertPlant: InsertPlant): Promise<Plant> {
-    const id = this.currentPlantId++;
-    const plant: Plant = {
-      ...insertPlant,
-      id,
-      userId,
-      createdAt: new Date(),
-    };
-    this.plants.set(id, plant);
+    const [plant] = await db
+      .insert(plants)
+      .values({ ...insertPlant, userId })
+      .returning();
     return plant;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
