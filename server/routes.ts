@@ -24,6 +24,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(plant);
   });
 
+  // Delete plant
+  app.delete("/api/plants/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const plant = await storage.getPlant(parseInt(req.params.id));
+    if (!plant) return res.sendStatus(404);
+    if (plant.userId !== req.user.id) return res.sendStatus(403);
+    await storage.deletePlant(parseInt(req.params.id));
+    res.sendStatus(204);
+  });
+
   // Create new plant
   app.post("/api/plants", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

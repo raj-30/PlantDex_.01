@@ -17,6 +17,7 @@ export interface IStorage {
   getPlants(userId: number): Promise<Plant[]>;
   getPlant(id: number): Promise<Plant | undefined>;
   createPlant(userId: number, plant: InsertPlant): Promise<Plant>;
+  deletePlant(id: number): Promise<void>;
 
   sessionStore: session.Store;
 }
@@ -61,6 +62,10 @@ export class DatabaseStorage implements IStorage {
       .values({ ...insertPlant, userId })
       .returning();
     return plant;
+  }
+
+  async deletePlant(id: number): Promise<void> {
+    await db.delete(plants).where(eq(plants.id, id));
   }
 }
 

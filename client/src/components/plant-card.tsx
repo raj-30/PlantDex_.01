@@ -1,15 +1,52 @@
 import { Plant } from "@shared/schema";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Leaf } from "lucide-react";
+import { Leaf, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface PlantCardProps {
   plant: Plant;
 }
 
 export default function PlantCard({ plant }: PlantCardProps) {
+  const { toast } = useToast();
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/plants/${plant.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/plants"] });
+      toast({
+        title: "Plant deleted",
+        description: "The plant has been removed from your collection.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: "Failed to delete plant. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <Card className="group hover:shadow-lg transition-shadow duration-200">
       <div className="relative">
+        {/* Delete button */}
+        <Button
+          variant="destructive"
+          size="icon"
+          className="absolute -right-2 -top-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          onClick={() => deleteMutation.mutate()}
+          disabled={deleteMutation.isPending}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+
         {/* Title overlay on image */}
         <div className="absolute -top-6 left-0 right-0 z-10 text-center">
           <div className="inline-block bg-white/95 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg border transform -translate-y-2 group-hover:translate-y-0 transition-transform duration-200">

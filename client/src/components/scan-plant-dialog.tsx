@@ -9,7 +9,8 @@ import { insertPlantSchema, InsertPlant } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Loader2, Upload, Camera } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 interface ScanPlantDialogProps {
   open: boolean;
@@ -19,8 +20,10 @@ interface ScanPlantDialogProps {
 export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogProps) {
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { toast } = useToast();
 
   const form = useForm<InsertPlant>({
     resolver: zodResolver(insertPlantSchema),
@@ -35,8 +38,13 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
 
   const scanMutation = useMutation({
     mutationFn: async (data: InsertPlant) => {
-      const res = await apiRequest("POST", "/api/plants", data);
-      return res.json();
+      setIsProcessing(true);
+      try {
+        const res = await apiRequest("POST", "/api/plants", data);
+        return res.json();
+      } finally {
+        setIsProcessing(false);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/plants"] });
@@ -44,13 +52,33 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       form.reset();
       setPreviewUrl(undefined);
       stopCamera();
+      toast({
+        title: "Success",
+        description: "Plant added to your collection!",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: "Failed to identify plant. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
   const onSubmit = form.handleSubmit((data) => {
+    if (!previewUrl) {
+      toast({
+        title: "Error",
+        description: "Please capture or upload an image first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     scanMutation.mutate({
       ...data,
-      imageUrl: previewUrl || "https://placehold.co/400x300",
+      imageUrl: previewUrl,
     });
   });
 
@@ -68,13 +96,24 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        } 
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCapturing(true);
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
+      toast({
+        title: "Camera Error",
+        description: "Could not access your camera. Please check permissions.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -91,13 +130,31 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext('2d')?.drawImage(video, 0, 0);
-      setPreviewUrl(canvas.toDataURL('image/jpeg'));
-      stopCamera();
+
+      // Set canvas size to match video dimensions
+      const { videoWidth, videoHeight } = video;
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+
+      // Draw the video frame to canvas
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+
+        // Convert to JPEG with good quality
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        setPreviewUrl(dataUrl);
+        stopCamera();
+      }
     }
   };
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => {
@@ -110,36 +167,11 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">
-            <Tabs defaultValue="upload" className="w-full">
+            <Tabs defaultValue="camera" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="upload">Upload</TabsTrigger>
                 <TabsTrigger value="camera">Camera</TabsTrigger>
+                <TabsTrigger value="upload">Upload</TabsTrigger>
               </TabsList>
-
-              <TabsContent value="upload">
-                <div className="flex justify-center">
-                  <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
-                    {previewUrl ? (
-                      <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer">
-                        <Upload className="h-8 w-8 text-gray-400" />
-                        <span className="mt-2 text-sm text-gray-500">Upload Image</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleImageChange}
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
-              </TabsContent>
 
               <TabsContent value="camera">
                 <div className="flex justify-center">
@@ -180,70 +212,48 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
                 </div>
                 <canvas ref={canvasRef} className="hidden" />
               </TabsContent>
+
+              <TabsContent value="upload">
+                <div className="flex justify-center">
+                  <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                    {previewUrl ? (
+                      <img
+                        src={previewUrl}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer">
+                        <Upload className="h-8 w-8 text-gray-400" />
+                        <span className="mt-2 text-sm text-gray-500">Upload Image</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleImageChange}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
             </Tabs>
 
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Plant Name</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {previewUrl && !isProcessing && (
+              <Button type="submit" className="w-full" disabled={scanMutation.isPending}>
+                {scanMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Identify Plant
+              </Button>
+            )}
 
-            <FormField
-              control={form.control}
-              name="scientificName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Scientific Name</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="habitat"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Habitat</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="careTips"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Care Tips</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <Button type="submit" className="w-full" disabled={scanMutation.isPending}>
-              {scanMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Add Plant
-            </Button>
+            {isProcessing && (
+              <div className="text-center py-4">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-green-600" />
+                <p className="mt-2 text-sm text-gray-600">Identifying your plant...</p>
+              </div>
+            )}
           </form>
         </Form>
       </DialogContent>
