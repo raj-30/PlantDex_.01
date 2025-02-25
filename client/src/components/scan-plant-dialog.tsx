@@ -1,14 +1,13 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPlantSchema, InsertPlant } from "@shared/schema";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Upload, Camera } from "lucide-react";
+import { Loader2, Camera } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -30,9 +29,9 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     defaultValues: {
       name: "",
       scientificName: "",
+      imageUrl: "",
       habitat: "",
       careTips: "",
-      imageUrl: "",
     },
   });
 
@@ -41,7 +40,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       setIsProcessing(true);
       try {
         const res = await apiRequest("POST", "/api/plants", data);
-        return res.json();
+        return await res.json();
       } finally {
         setIsProcessing(false);
       }
@@ -54,7 +53,7 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       stopCamera();
       toast({
         title: "Success",
-        description: "Plant added to your collection!",
+        description: "Plant identified and added to your collection!",
       });
     },
     onError: (error: Error) => {
@@ -82,36 +81,39 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     });
   });
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
-        stopCamera();
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment',
+      const constraints = {
+        video: {
+          facingMode: { exact: "environment" }, // Use back camera
           width: { ideal: 1920 },
           height: { ideal: 1080 }
-        } 
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints).catch(() => {
+        // Fallback to any available camera if environment camera fails
+        return navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          } 
+        });
       });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        setIsCapturing(true);
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play();
+          setIsCapturing(true);
+        };
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
       toast({
         title: "Camera Error",
-        description: "Could not access your camera. Please check permissions.",
+        description: "Could not access your camera. Please check permissions and try again.",
         variant: "destructive",
       });
     }
@@ -141,19 +143,17 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
       if (ctx) {
         ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
 
-        // Convert to JPEG with good quality
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        // Convert to JPEG with high quality
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
         setPreviewUrl(dataUrl);
         stopCamera();
       }
     }
   };
 
-  // Cleanup camera on unmount
+  // Cleanup camera on unmount or dialog close
   useEffect(() => {
-    return () => {
-      stopCamera();
-    };
+    return () => stopCamera();
   }, []);
 
   return (
@@ -163,81 +163,59 @@ export default function ScanPlantDialog({ open, onOpenChange }: ScanPlantDialogP
     }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Scan New Plant</DialogTitle>
+          <DialogTitle>Scan Plant</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={onSubmit} className="space-y-4">
-            <Tabs defaultValue="camera" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="camera">Camera</TabsTrigger>
-                <TabsTrigger value="upload">Upload</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="camera">
-                <div className="flex justify-center">
-                  <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
-                    {previewUrl ? (
-                      <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : isCapturing ? (
-                      <>
-                        <video
-                          ref={videoRef}
-                          autoPlay
-                          playsInline
-                          className="w-full h-full object-cover"
-                        />
-                        <Button
-                          type="button"
-                          onClick={captureImage}
-                          className="absolute bottom-4 left-1/2 transform -translate-x-1/2"
-                        >
-                          Capture
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        type="button"
-                        onClick={startCamera}
-                        className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
-                      >
-                        <Camera className="h-6 w-6 mr-2" />
-                        Start Camera
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <canvas ref={canvasRef} className="hidden" />
-              </TabsContent>
-
-              <TabsContent value="upload">
-                <div className="flex justify-center">
-                  <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
-                    {previewUrl ? (
-                      <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer">
-                        <Upload className="h-8 w-8 text-gray-400" />
-                        <span className="mt-2 text-sm text-gray-500">Upload Image</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleImageChange}
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
+            <div className="flex justify-center">
+              <div className="relative w-full aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                {previewUrl ? (
+                  <>
+                    <img
+                      src={previewUrl}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2"
+                      onClick={() => {
+                        setPreviewUrl(undefined);
+                        startCamera();
+                      }}
+                    >
+                      Retake
+                    </Button>
+                  </>
+                ) : isCapturing ? (
+                  <>
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                    <Button
+                      type="button"
+                      onClick={captureImage}
+                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2"
+                    >
+                      Capture
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={startCamera}
+                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
+                  >
+                    <Camera className="h-6 w-6 mr-2" />
+                    Start Camera
+                  </Button>
+                )}
+              </div>
+            </div>
 
             {previewUrl && !isProcessing && (
               <Button type="submit" className="w-full" disabled={scanMutation.isPending}>
